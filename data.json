@@ -1,0 +1,15 @@
+{
+  "tasks": [
+    {
+      "id": "55de82ff-1c4b-43f5-a350-70100a854a71",
+      "name": "背单词（新）",
+      "target": 10,
+      "unit": "个",
+      "progress": 0,
+      "archived": false,
+      "logs": [],
+      "createdAt": "2026-05-02T02:22:38.664Z",
+      "updatedAt": "2026-05-02T02:22:38.664Z"
+    }
+  ]
+}

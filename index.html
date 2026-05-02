@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>夸夸打卡器</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Task Praise</p>
+        <h1>夸夸打卡器</h1>
+      </div>
+      <a class="icon-link" href="statistic.html">统计</a>
+    </header>
+
+    <section class="hero-panel">
+      <div class="section-title">
+        <div>
+          <h2>添加打卡任务</h2>
+          <p class="muted">设置目标数量后，进度条最大值会自动变成目标数量的 5 倍。</p>
+        </div>
+      </div>
+
+      <form id="taskForm" class="task-form">
+        <label>
+          <span>任务名称</span>
+          <input id="taskName" type="text" maxlength="30" placeholder="例如：Python 教学视频" required>
+        </label>
+        <label>
+          <span>目标数量</span>
+          <input id="taskTarget" type="number" min="1" max="999" placeholder="2" required>
+        </label>
+        <label>
+          <span>单位</span>
+          <input id="taskUnit" type="text" maxlength="8" placeholder="个">
+        </label>
+        <button class="primary-button" type="submit">添加任务</button>
+      </form>
+    </section>
+
+    <section class="stats-grid" aria-label="任务概览">
+      <article class="stat-card">
+        <span>进行中</span>
+        <strong id="taskCount">0</strong>
+        <small>项</small>
+      </article>
+      <article class="stat-card">
+        <span>今日打卡</span>
+        <strong id="todayCount">0</strong>
+        <small>次</small>
+      </article>
+      <article class="stat-card">
+        <span>已归档</span>
+        <strong id="archivedCount">0</strong>
+        <small>项</small>
+      </article>
+    </section>
+
+    <section class="history-section">
+      <div class="section-title">
+        <div>
+          <h2>进行中的任务</h2>
+          <p id="praiseText" class="muted praise-line">先添加一个任务，然后给努力的自己打卡。</p>
+        </div>
+        <button id="clearAllBtn" class="text-button" type="button">清空全部</button>
+      </div>
+      <div id="taskList" class="task-list"></div>
+    </section>
+
+    <section class="history-section">
+      <div class="section-title">
+        <div>
+          <h2>已归档任务</h2>
+          <p class="muted">归档后不再参与今日任务，但历史打卡仍会进入统计。</p>
+        </div>
+      </div>
+      <div id="archivedTaskList" class="task-list"></div>
+    </section>
+  </main>
+
+  <template id="taskTemplate">
+    <article class="task-card">
+      <div class="task-card-header">
+        <div>
+          <div class="title-row">
+            <h3></h3>
+            <span class="task-status"></span>
+          </div>
+          <p class="task-meta"></p>
+        </div>
+        <div class="card-tools">
+          <button class="tool-button edit-button" type="button">编辑</button>
+          <button class="tool-button archive-button" type="button">归档</button>
+          <button class="delete-button" type="button" aria-label="删除任务">删除</button>
+        </div>
+      </div>
+
+      <form class="edit-form" hidden>
+        <label>
+          <span>任务名称</span>
+          <input class="edit-name" type="text" maxlength="30" required>
+        </label>
+        <label>
+          <span>目标数量</span>
+          <input class="edit-target" type="number" min="1" max="999" required>
+        </label>
+        <label>
+          <span>单位</span>
+          <input class="edit-unit" type="text" maxlength="8">
+        </label>
+        <div class="edit-actions">
+          <button class="small-button cancel-edit-button" type="button">取消</button>
+          <button class="check-button" type="submit">保存</button>
+        </div>
+      </form>
+
+      <div class="task-progress-area">
+        <div class="progress-readout">
+          <strong class="progress-value">0</strong>
+          <span class="progress-unit"></span>
+        </div>
+
+        <input class="task-slider" type="range" min="0" value="0">
+
+        <div class="task-actions">
+          <button class="small-button minus-button" type="button">-1</button>
+          <button class="check-button checkin-button" type="button">打卡</button>
+          <button class="small-button plus-button" type="button">+1</button>
+        </div>
+      </div>
+    </article>
+  </template>
+
+  <script>
+    const STORAGE_KEY = "praise-task-checkins";
+    const praises = [
+      "很好，今天的进度已经被你稳稳拿下。",
+      "漂亮！你又给这件事增加了一点确定性。",
+      "这一下不是小数值，是你认真行动的证据。",
+      "继续这样走，目标会越来越靠近你。",
+      "你刚刚完成了一次很实在的推进，值得夸。",
+      "节奏很好，今天的你有在认真照顾目标。",
+      "这个打卡很扎实，给自己记上一笔漂亮的努力。",
+      "你没有只想一想，而是真的动手做了。"
+    ];
+
+    const taskForm = document.querySelector("#taskForm");
+    const taskName = document.querySelector("#taskName");
+    const taskTarget = document.querySelector("#taskTarget");
+    const taskUnit = document.querySelector("#taskUnit");
+    const taskList = document.querySelector("#taskList");
+    const archivedTaskList = document.querySelector("#archivedTaskList");
+    const taskTemplate = document.querySelector("#taskTemplate");
+    const taskCount = document.querySelector("#taskCount");
+    const todayCount = document.querySelector("#todayCount");
+    const archivedCount = document.querySelector("#archivedCount");
+    const praiseText = document.querySelector("#praiseText");
+    const clearAllBtn = document.querySelector("#clearAllBtn");
+
+    function getTodayKey(date = new Date()) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function getLogTimestamp(log) {
+      if (Number.isFinite(Number(log.timestamp))) {
+        return Number(log.timestamp);
+      }
+      return Date.parse(log.createdAt || log.date) || 0;
+    }
+
+    function getLogDate(log) {
+      const timestamp = getLogTimestamp(log);
+      return timestamp ? getTodayKey(new Date(timestamp)) : log.date;
+    }
+
+    function normalizeTasks(tasks) {
+      return tasks.map((task) => ({
+        ...task,
+        archived: Boolean(task.archived),
+        logs: (task.logs || []).map((log) => {
+          const timestamp = getLogTimestamp(log) || Date.now();
+          return {
+            ...log,
+            timestamp,
+            date: getTodayKey(new Date(timestamp)),
+            createdAt: log.createdAt || new Date(timestamp).toISOString()
+          };
+        })
+      }));
+    }
+
+    async function readTasks() {
+      try {
+        const response = await fetch("/api/tasks", { cache: "no-store" });
+        if (response.ok) {
+          const data = await response.json();
+          return normalizeTasks(Array.isArray(data.tasks) ? data.tasks : []);
+        }
+      } catch {
+        // Directly opening the HTML cannot use the JSON file API, so keep a browser fallback.
+      }
+
+      try {
+        const tasks = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        return normalizeTasks(Array.isArray(tasks) ? tasks : []);
+      } catch {
+        return [];
+      }
+    }
+
+    async function saveTasks(tasks) {
+      const normalizedTasks = normalizeTasks(tasks);
+      try {
+        const response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tasks: normalizedTasks })
+        });
+        if (response.ok) {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedTasks));
+          return;
+        }
+      } catch {
+        // Directly opening the HTML cannot write data.json, so keep a browser fallback.
+      }
+
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedTasks));
+    }
+
+    function createId() {
+      if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+        return crypto.randomUUID();
+      }
+      return `task-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    }
+
+    function getMaxValue(task) {
+      return Number(task.target) * 5;
+    }
+
+    function randomPraise(task, amount) {
+      const praise = praises[Math.floor(Math.random() * praises.length)];
+      praiseText.textContent = `${task.name} 已打卡到 ${amount}${task.unit}。${praise}`;
+    }
+
+    async function updateTask(id, updater) {
+      const tasks = await readTasks();
+      const nextTasks = tasks.map((task) => task.id === id ? updater(task) : task);
+      await saveTasks(nextTasks);
+      await render();
+    }
+
+    function updateSliderDisplay(task, slider, value, meta) {
+      const max = getMaxValue(task);
+      const progress = Number(slider.value);
+      const percent = Math.round((progress / Number(task.target)) * 100);
+
+      value.textContent = progress;
+      meta.textContent = `目标 ${task.target}${task.unit} · 进度条范围 0-${max}${task.unit} · 当前 ${percent}%`;
+      slider.style.setProperty("--fill", `${(progress / max) * 100}%`);
+    }
+
+    function renderTask(task, isArchived) {
+      const max = getMaxValue(task);
+      const progress = Math.min(Number(task.progress) || 0, max);
+      const clone = taskTemplate.content.cloneNode(true);
+      const card = clone.querySelector(".task-card");
+      const title = clone.querySelector("h3");
+      const status = clone.querySelector(".task-status");
+      const meta = clone.querySelector(".task-meta");
+      const value = clone.querySelector(".progress-value");
+      const unit = clone.querySelector(".progress-unit");
+      const slider = clone.querySelector(".task-slider");
+      const editButton = clone.querySelector(".edit-button");
+      const archiveButton = clone.querySelector(".archive-button");
+      const deleteButton = clone.querySelector(".delete-button");
+      const progressArea = clone.querySelector(".task-progress-area");
+      const checkButton = clone.querySelector(".checkin-button");
+      const plusButton = clone.querySelector(".plus-button");
+      const minusButton = clone.querySelector(".minus-button");
+      const editForm = clone.querySelector(".edit-form");
+      const editName = clone.querySelector(".edit-name");
+      const editTarget = clone.querySelector(".edit-target");
+      const editUnit = clone.querySelector(".edit-unit");
+      const cancelEditButton = clone.querySelector(".cancel-edit-button");
+
+      card.dataset.id = task.id;
+      card.classList.toggle("is-archived", isArchived);
+      title.textContent = task.name;
+      status.textContent = isArchived ? "已归档" : "进行中";
+      unit.textContent = `${task.unit} / ${task.target}${task.unit}`;
+      slider.max = max;
+      slider.value = progress;
+      updateSliderDisplay(task, slider, value, meta);
+
+      archiveButton.textContent = isArchived ? "恢复" : "归档";
+      progressArea.hidden = isArchived;
+      editButton.hidden = isArchived;
+
+      editButton.addEventListener("click", () => {
+        editName.value = task.name;
+        editTarget.value = task.target;
+        editUnit.value = task.unit;
+        editForm.hidden = false;
+      });
+
+      cancelEditButton.addEventListener("click", () => {
+        editForm.hidden = true;
+      });
+
+      editForm.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const nextName = editName.value.trim();
+        const nextTarget = Number(editTarget.value);
+        const nextUnit = editUnit.value.trim() || "个";
+
+        if (!nextName || !Number.isInteger(nextTarget) || nextTarget < 1) {
+          return;
+        }
+
+        await updateTask(task.id, (current) => {
+          const nextMax = nextTarget * 5;
+          return {
+            ...current,
+            name: nextName,
+            target: nextTarget,
+            unit: nextUnit,
+            progress: Math.min(Number(current.progress) || 0, nextMax),
+            updatedAt: new Date().toISOString()
+          };
+        });
+        praiseText.textContent = `已更新「${nextName}」。`;
+      });
+
+      slider.addEventListener("input", () => {
+        updateSliderDisplay(task, slider, value, meta);
+      });
+
+      slider.addEventListener("change", async () => {
+        await updateTask(task.id, (current) => ({
+          ...current,
+          progress: Number(slider.value),
+          updatedAt: new Date().toISOString()
+        }));
+      });
+
+      checkButton.addEventListener("click", async () => {
+        const amount = Number(slider.value);
+        const timestamp = Date.now();
+        await updateTask(task.id, (current) => {
+          const log = {
+            date: getTodayKey(new Date(timestamp)),
+            amount,
+            timestamp,
+            createdAt: new Date(timestamp).toISOString()
+          };
+          return {
+            ...current,
+            progress: amount,
+            logs: [...(current.logs || []), log],
+            updatedAt: new Date(timestamp).toISOString()
+          };
+        });
+        randomPraise(task, amount);
+      });
+
+      plusButton.addEventListener("click", async () => {
+        const nextValue = Math.min(Number(slider.value) + 1, max);
+        await updateTask(task.id, (current) => ({
+          ...current,
+          progress: nextValue,
+          updatedAt: new Date().toISOString()
+        }));
+      });
+
+      minusButton.addEventListener("click", async () => {
+        const nextValue = Math.max(Number(slider.value) - 1, 0);
+        await updateTask(task.id, (current) => ({
+          ...current,
+          progress: nextValue,
+          updatedAt: new Date().toISOString()
+        }));
+      });
+
+      archiveButton.addEventListener("click", async () => {
+        const timestamp = Date.now();
+        await updateTask(task.id, (current) => ({
+          ...current,
+          archived: !isArchived,
+          archivedAt: isArchived ? null : new Date(timestamp).toISOString(),
+          updatedAt: new Date(timestamp).toISOString()
+        }));
+        praiseText.textContent = isArchived ? `已恢复「${task.name}」。` : `已归档「${task.name}」。`;
+      });
+
+      deleteButton.addEventListener("click", async () => {
+        if (!confirm(`确定要删除「${task.name}」吗？`)) {
+          return;
+        }
+        const nextTasks = (await readTasks()).filter((item) => item.id !== task.id);
+        await saveTasks(nextTasks);
+        await render();
+      });
+
+      return clone;
+    }
+
+    async function render() {
+      const tasks = await readTasks();
+      const todayKey = getTodayKey();
+      const activeTasks = tasks.filter((task) => !task.archived);
+      const archivedTasks = tasks.filter((task) => task.archived);
+      const logs = tasks.flatMap((task) => task.logs || []);
+
+      taskCount.textContent = activeTasks.length;
+      todayCount.textContent = logs.filter((log) => getLogDate(log) === todayKey).length;
+      archivedCount.textContent = archivedTasks.length;
+
+      taskList.innerHTML = "";
+      archivedTaskList.innerHTML = "";
+
+      if (activeTasks.length === 0) {
+        taskList.innerHTML = '<p class="empty-state">还没有进行中的任务。可以先添加“Python 教学视频 2 个”或“背英语单词 10 个”。</p>';
+      } else {
+        activeTasks.forEach((task) => taskList.appendChild(renderTask(task, false)));
+      }
+
+      if (archivedTasks.length === 0) {
+        archivedTaskList.innerHTML = '<p class="empty-state">暂无归档任务。</p>';
+      } else {
+        archivedTasks.forEach((task) => archivedTaskList.appendChild(renderTask(task, true)));
+      }
+    }
+
+    taskForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const name = taskName.value.trim();
+      const target = Number(taskTarget.value);
+      const unit = taskUnit.value.trim() || "个";
+      const timestamp = Date.now();
+
+      if (!name || !Number.isInteger(target) || target < 1) {
+        return;
+      }
+
+      const tasks = await readTasks();
+      tasks.push({
+        id: createId(),
+        name,
+        target,
+        unit,
+        progress: 0,
+        archived: false,
+        logs: [],
+        createdAt: new Date(timestamp).toISOString(),
+        updatedAt: new Date(timestamp).toISOString()
+      });
+      await saveTasks(tasks);
+      taskForm.reset();
+      taskUnit.value = "";
+      praiseText.textContent = `已添加「${name}」，现在可以开始打卡啦。`;
+      await render();
+    });
+
+    clearAllBtn.addEventListener("click", async () => {
+      if (confirm("确定要清空所有任务和打卡记录吗？")) {
+        await saveTasks([]);
+        localStorage.removeItem(STORAGE_KEY);
+        praiseText.textContent = "已清空。新的计划可以从一个小任务开始。";
+        await render();
+      }
+    });
+
+    render();
+  </script>
+</body>
+</html>

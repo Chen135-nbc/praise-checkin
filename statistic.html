@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>任务统计 - 夸夸打卡器</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app-shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Progress</p>
+        <h1>任务统计</h1>
+      </div>
+      <a class="icon-link" href="index.html">返回</a>
+    </header>
+
+    <section class="stats-grid" aria-label="统计概览">
+      <article class="stat-card">
+        <span>进行中</span>
+        <strong id="activeTaskCount">0</strong>
+        <small>项</small>
+      </article>
+      <article class="stat-card">
+        <span>已归档</span>
+        <strong id="archivedTaskCount">0</strong>
+        <small>项</small>
+      </article>
+      <article class="stat-card">
+        <span>打卡次数</span>
+        <strong id="logCount">0</strong>
+        <small>次</small>
+      </article>
+      <article class="stat-card">
+        <span>今日打卡</span>
+        <strong id="todayLogCount">0</strong>
+        <small>次</small>
+      </article>
+      <article class="stat-card">
+        <span>本周打卡</span>
+        <strong id="weekLogCount">0</strong>
+        <small>次</small>
+      </article>
+      <article class="stat-card">
+        <span>最近打卡</span>
+        <strong id="latestLogTime" class="stat-time">--</strong>
+        <small>时间</small>
+      </article>
+    </section>
+
+    <section class="history-section">
+      <div class="section-title">
+        <div>
+          <h2>任务进度</h2>
+          <p class="muted">超过目标也会继续统计，进度条上限为目标数量的 5 倍。已归档任务会保留历史。</p>
+        </div>
+      </div>
+      <div id="progressList" class="progress-list"></div>
+    </section>
+
+    <section class="history-section">
+      <div class="section-title">
+        <h2>打卡记录</h2>
+        <span id="recordHint" class="muted"></span>
+      </div>
+      <ul id="historyList" class="history-list"></ul>
+    </section>
+  </main>
+
+  <script>
+    const STORAGE_KEY = "praise-task-checkins";
+    const activeTaskCount = document.querySelector("#activeTaskCount");
+    const archivedTaskCount = document.querySelector("#archivedTaskCount");
+    const logCount = document.querySelector("#logCount");
+    const todayLogCount = document.querySelector("#todayLogCount");
+    const weekLogCount = document.querySelector("#weekLogCount");
+    const latestLogTime = document.querySelector("#latestLogTime");
+    const progressList = document.querySelector("#progressList");
+    const recordHint = document.querySelector("#recordHint");
+    const historyList = document.querySelector("#historyList");
+
+    function getTodayKey(date = new Date()) {
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, "0");
+      const day = String(date.getDate()).padStart(2, "0");
+      return `${year}-${month}-${day}`;
+    }
+
+    function getLogTimestamp(log) {
+      if (Number.isFinite(Number(log.timestamp))) {
+        return Number(log.timestamp);
+      }
+      return Date.parse(log.createdAt || log.date) || 0;
+    }
+
+    function getLogDate(log) {
+      const timestamp = getLogTimestamp(log);
+      return timestamp ? getTodayKey(new Date(timestamp)) : log.date;
+    }
+
+    function getWeekStart(date = new Date()) {
+      const start = new Date(date);
+      const day = start.getDay() || 7;
+      start.setHours(0, 0, 0, 0);
+      start.setDate(start.getDate() - day + 1);
+      return start.getTime();
+    }
+
+    function normalizeTasks(tasks) {
+      return tasks.map((task) => ({
+        ...task,
+        archived: Boolean(task.archived),
+        logs: (task.logs || []).map((log) => {
+          const timestamp = getLogTimestamp(log) || Date.now();
+          return {
+            ...log,
+            timestamp,
+            date: getTodayKey(new Date(timestamp)),
+            createdAt: log.createdAt || new Date(timestamp).toISOString()
+          };
+        })
+      }));
+    }
+
+    async function readTasks() {
+      try {
+        const response = await fetch("/api/tasks", { cache: "no-store" });
+        if (response.ok) {
+          const data = await response.json();
+          return normalizeTasks(Array.isArray(data.tasks) ? data.tasks : []);
+        }
+      } catch {
+        // Directly opening the HTML cannot use the JSON file API, so keep a browser fallback.
+      }
+
+      try {
+        const tasks = JSON.parse(localStorage.getItem(STORAGE_KEY));
+        return normalizeTasks(Array.isArray(tasks) ? tasks : []);
+      } catch {
+        return [];
+      }
+    }
+
+    function escapeHtml(value) {
+      return String(value).replace(/[&<>"']/g, (char) => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[char]);
+    }
+
+    function formatTime(value) {
+      return new Intl.DateTimeFormat("zh-CN", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(new Date(value));
+    }
+
+    function formatFullTime(value) {
+      return new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit"
+      }).format(new Date(value));
+    }
+
+    async function render() {
+      const tasks = await readTasks();
+      const logs = tasks.flatMap((task) => (task.logs || []).map((log) => ({
+        ...log,
+        taskName: task.name,
+        unit: task.unit,
+        archived: task.archived
+      }))).sort((a, b) => getLogTimestamp(b) - getLogTimestamp(a));
+      const todayKey = getTodayKey();
+      const weekStart = getWeekStart();
+      const latestLog = logs[0];
+
+      activeTaskCount.textContent = tasks.filter((task) => !task.archived).length;
+      archivedTaskCount.textContent = tasks.filter((task) => task.archived).length;
+      logCount.textContent = logs.length;
+      todayLogCount.textContent = logs.filter((log) => getLogDate(log) === todayKey).length;
+      weekLogCount.textContent = logs.filter((log) => getLogTimestamp(log) >= weekStart).length;
+      latestLogTime.textContent = latestLog ? formatTime(getLogTimestamp(latestLog)) : "--";
+      recordHint.textContent = `${logs.length} 条`;
+
+      progressList.innerHTML = "";
+      if (tasks.length === 0) {
+        progressList.innerHTML = '<p class="empty-state">暂无任务。</p>';
+      } else {
+        tasks.forEach((task) => {
+          const max = Number(task.target) * 5;
+          const progress = Number(task.progress) || 0;
+          const targetPercent = Math.min((progress / Number(task.target)) * 100, 500);
+          const rangePercent = Math.min((progress / max) * 100, 100);
+          const item = document.createElement("article");
+          item.className = "progress-item";
+          item.innerHTML = `
+            <div class="progress-item-head">
+              <strong>${escapeHtml(task.name)}${task.archived ? "（已归档）" : ""}</strong>
+              <span>${progress}${escapeHtml(task.unit)} / ${task.target}${escapeHtml(task.unit)}</span>
+            </div>
+            <div class="meter" style="--fill: ${rangePercent}%">
+              <span></span>
+            </div>
+            <p class="muted">目标完成度 ${Math.round(targetPercent)}%，进度条范围 0-${max}${escapeHtml(task.unit)}</p>
+          `;
+          progressList.appendChild(item);
+        });
+      }
+
+      historyList.innerHTML = "";
+      if (logs.length === 0) {
+        historyList.innerHTML = '<li class="empty-state">暂无打卡记录。</li>';
+        return;
+      }
+
+      logs.forEach((log) => {
+        const timestamp = getLogTimestamp(log);
+        const item = document.createElement("li");
+        item.className = "history-item";
+        item.innerHTML = `
+          <time datetime="${new Date(timestamp).toISOString()}">${formatFullTime(timestamp)}</time>
+          <p>${escapeHtml(log.taskName)} 打卡到 ${log.amount}${escapeHtml(log.unit)}</p>
+          <span>${log.archived ? "已归档任务" : "进行中任务"} · 时间戳 ${timestamp}</span>
+        `;
+        historyList.appendChild(item);
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>
