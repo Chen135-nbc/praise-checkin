@@ -43,6 +43,11 @@
         <small>次</small>
       </article>
       <article class="stat-card">
+        <span>本周期达标</span>
+        <strong id="periodDoneCount">0</strong>
+        <small>项</small>
+      </article>
+      <article class="stat-card">
         <span>最近打卡</span>
         <strong id="latestLogTime" class="stat-time">--</strong>
         <small>时间</small>
@@ -75,6 +80,7 @@
     const logCount = document.querySelector("#logCount");
     const todayLogCount = document.querySelector("#todayLogCount");
     const weekLogCount = document.querySelector("#weekLogCount");
+    const periodDoneCount = document.querySelector("#periodDoneCount");
     const latestLogTime = document.querySelector("#latestLogTime");
     const progressList = document.querySelector("#progressList");
     const recordHint = document.querySelector("#recordHint");
@@ -107,10 +113,71 @@
       return start.getTime();
     }
 
+    function normalizeFrequency(frequency) {
+      const type = frequency?.type || "daily";
+      const weeklyDays = Math.min(Math.max(Number(frequency?.weeklyDays) || 1, 1), 7);
+      if (type === "weekly") {
+        return { type: "weekly", weeklyDays: 1 };
+      }
+      if (type === "custom") {
+        return { type: "custom", weeklyDays };
+      }
+      return { type: "daily", weeklyDays: 1 };
+    }
+
+    function getFrequencyLabel(task) {
+      const frequency = normalizeFrequency(task.frequency);
+      if (frequency.type === "weekly") {
+        return "每周打卡 1 天";
+      }
+      if (frequency.type === "custom") {
+        return `每周打卡 ${frequency.weeklyDays} 天`;
+      }
+      return "每天打卡";
+    }
+
+    function getTaskPeriodStatus(task, now = new Date()) {
+      const frequency = normalizeFrequency(task.frequency);
+      const logs = task.logs || [];
+      const todayKey = getTodayKey(now);
+      const weekStart = getWeekStart(now);
+      const weekLogs = logs.filter((log) => getLogTimestamp(log) >= weekStart);
+      const weekDays = new Set(weekLogs.map((log) => getLogDate(log))).size;
+
+      if (task.archived) {
+        return {
+          done: false,
+          actual: weekDays,
+          required: frequency.type === "custom" ? frequency.weeklyDays : 1,
+          text: `已归档，本周曾打卡 ${weekDays} 天`
+        };
+      }
+
+      if (frequency.type === "daily") {
+        const done = logs.some((log) => getLogDate(log) === todayKey);
+        return {
+          done,
+          actual: done ? 1 : 0,
+          required: 1,
+          text: done ? "今日已完成" : "今日未打卡"
+        };
+      }
+
+      const required = frequency.type === "custom" ? frequency.weeklyDays : 1;
+      const done = weekDays >= required;
+      return {
+        done,
+        actual: weekDays,
+        required,
+        text: done ? `本周已达标，完成 ${weekDays}/${required} 天` : `本周还差 ${required - weekDays} 天，当前 ${weekDays}/${required} 天`
+      };
+    }
+
     function normalizeTasks(tasks) {
       return tasks.map((task) => ({
         ...task,
         archived: Boolean(task.archived),
+        frequency: normalizeFrequency(task.frequency),
         logs: (task.logs || []).map((log) => {
           const timestamp = getLogTimestamp(log) || Date.now();
           return {
@@ -183,12 +250,14 @@
       const todayKey = getTodayKey();
       const weekStart = getWeekStart();
       const latestLog = logs[0];
+      const activeTasks = tasks.filter((task) => !task.archived);
 
-      activeTaskCount.textContent = tasks.filter((task) => !task.archived).length;
+      activeTaskCount.textContent = activeTasks.length;
       archivedTaskCount.textContent = tasks.filter((task) => task.archived).length;
       logCount.textContent = logs.length;
       todayLogCount.textContent = logs.filter((log) => getLogDate(log) === todayKey).length;
       weekLogCount.textContent = logs.filter((log) => getLogTimestamp(log) >= weekStart).length;
+      periodDoneCount.textContent = activeTasks.filter((task) => getTaskPeriodStatus(task).done).length;
       latestLogTime.textContent = latestLog ? formatTime(getLogTimestamp(latestLog)) : "--";
       recordHint.textContent = `${logs.length} 条`;
 
@@ -201,8 +270,10 @@
           const progress = Number(task.progress) || 0;
           const targetPercent = Math.min((progress / Number(task.target)) * 100, 500);
           const rangePercent = Math.min((progress / max) * 100, 100);
+          const periodStatus = getTaskPeriodStatus(task);
           const item = document.createElement("article");
           item.className = "progress-item";
+          item.classList.toggle("is-period-done", periodStatus.done);
           item.innerHTML = `
             <div class="progress-item-head">
               <strong>${escapeHtml(task.name)}${task.archived ? "（已归档）" : ""}</strong>
@@ -211,6 +282,7 @@
             <div class="meter" style="--fill: ${rangePercent}%">
               <span></span>
             </div>
+            <p class="muted">${getFrequencyLabel(task)} · ${periodStatus.text}</p>
             <p class="muted">目标完成度 ${Math.round(targetPercent)}%，进度条范围 0-${max}${escapeHtml(task.unit)}</p>
           `;
           progressList.appendChild(item);
@@ -230,7 +302,7 @@
         item.innerHTML = `
           <time datetime="${new Date(timestamp).toISOString()}">${formatFullTime(timestamp)}</time>
           <p>${escapeHtml(log.taskName)} 打卡到 ${log.amount}${escapeHtml(log.unit)}</p>
-          <span>${log.archived ? "已归档任务" : "进行中任务"} · 时间戳 ${timestamp}</span>
+          <span>${log.archived ? "已归档任务" : "进行中任务"} · ${getLogDate(log)}</span>
         `;
         historyList.appendChild(item);
       });

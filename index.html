@@ -37,6 +37,18 @@
           <span>单位</span>
           <input id="taskUnit" type="text" maxlength="8" placeholder="个">
         </label>
+        <label>
+          <span>打卡频率</span>
+          <select id="taskFrequency">
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+            <option value="custom">自定义每周天数</option>
+          </select>
+        </label>
+        <label id="taskWeeklyDaysLabel" class="weekly-days-field" hidden>
+          <span>每周天数</span>
+          <input id="taskWeeklyDays" type="number" min="1" max="7" value="3">
+        </label>
         <button class="primary-button" type="submit">添加任务</button>
       </form>
     </section>
@@ -111,6 +123,18 @@
           <span>单位</span>
           <input class="edit-unit" type="text" maxlength="8">
         </label>
+        <label>
+          <span>打卡频率</span>
+          <select class="edit-frequency">
+            <option value="daily">每天</option>
+            <option value="weekly">每周</option>
+            <option value="custom">自定义每周天数</option>
+          </select>
+        </label>
+        <label class="weekly-days-field edit-weekly-days-field" hidden>
+          <span>每周天数</span>
+          <input class="edit-weekly-days" type="number" min="1" max="7" value="3">
+        </label>
         <div class="edit-actions">
           <button class="small-button cancel-edit-button" type="button">取消</button>
           <button class="check-button" type="submit">保存</button>
@@ -151,6 +175,9 @@
     const taskName = document.querySelector("#taskName");
     const taskTarget = document.querySelector("#taskTarget");
     const taskUnit = document.querySelector("#taskUnit");
+    const taskFrequency = document.querySelector("#taskFrequency");
+    const taskWeeklyDays = document.querySelector("#taskWeeklyDays");
+    const taskWeeklyDaysLabel = document.querySelector("#taskWeeklyDaysLabel");
     const taskList = document.querySelector("#taskList");
     const archivedTaskList = document.querySelector("#archivedTaskList");
     const taskTemplate = document.querySelector("#taskTemplate");
@@ -179,10 +206,46 @@
       return timestamp ? getTodayKey(new Date(timestamp)) : log.date;
     }
 
+    function normalizeFrequency(frequency) {
+      const type = frequency?.type || "daily";
+      const weeklyDays = Math.min(Math.max(Number(frequency?.weeklyDays) || 1, 1), 7);
+      if (type === "weekly") {
+        return { type: "weekly", weeklyDays: 1 };
+      }
+      if (type === "custom") {
+        return { type: "custom", weeklyDays };
+      }
+      return { type: "daily", weeklyDays: 1 };
+    }
+
+    function getFrequencyLabel(task) {
+      const frequency = normalizeFrequency(task.frequency);
+      if (frequency.type === "weekly") {
+        return "每周打卡 1 天";
+      }
+      if (frequency.type === "custom") {
+        return `每周打卡 ${frequency.weeklyDays} 天`;
+      }
+      return "每天打卡";
+    }
+
+    function readFrequency(select, weeklyDaysInput) {
+      const type = select.value;
+      return normalizeFrequency({
+        type,
+        weeklyDays: type === "custom" ? Number(weeklyDaysInput.value) : 1
+      });
+    }
+
+    function syncWeeklyDaysField(select, field) {
+      field.hidden = select.value !== "custom";
+    }
+
     function normalizeTasks(tasks) {
       return tasks.map((task) => ({
         ...task,
         archived: Boolean(task.archived),
+        frequency: normalizeFrequency(task.frequency),
         logs: (task.logs || []).map((log) => {
           const timestamp = getLogTimestamp(log) || Date.now();
           return {
@@ -262,7 +325,7 @@
       const percent = Math.round((progress / Number(task.target)) * 100);
 
       value.textContent = progress;
-      meta.textContent = `目标 ${task.target}${task.unit} · 进度条范围 0-${max}${task.unit} · 当前 ${percent}%`;
+      meta.textContent = `${getFrequencyLabel(task)} · 目标 ${task.target}${task.unit} · 进度条范围 0-${max}${task.unit} · 当前 ${percent}%`;
       slider.style.setProperty("--fill", `${(progress / max) * 100}%`);
     }
 
@@ -288,6 +351,9 @@
       const editName = clone.querySelector(".edit-name");
       const editTarget = clone.querySelector(".edit-target");
       const editUnit = clone.querySelector(".edit-unit");
+      const editFrequency = clone.querySelector(".edit-frequency");
+      const editWeeklyDays = clone.querySelector(".edit-weekly-days");
+      const editWeeklyDaysField = clone.querySelector(".edit-weekly-days-field");
       const cancelEditButton = clone.querySelector(".cancel-edit-button");
 
       card.dataset.id = task.id;
@@ -307,7 +373,14 @@
         editName.value = task.name;
         editTarget.value = task.target;
         editUnit.value = task.unit;
+        editFrequency.value = normalizeFrequency(task.frequency).type;
+        editWeeklyDays.value = normalizeFrequency(task.frequency).weeklyDays;
+        syncWeeklyDaysField(editFrequency, editWeeklyDaysField);
         editForm.hidden = false;
+      });
+
+      editFrequency.addEventListener("change", () => {
+        syncWeeklyDaysField(editFrequency, editWeeklyDaysField);
       });
 
       cancelEditButton.addEventListener("click", () => {
@@ -319,6 +392,7 @@
         const nextName = editName.value.trim();
         const nextTarget = Number(editTarget.value);
         const nextUnit = editUnit.value.trim() || "个";
+        const nextFrequency = readFrequency(editFrequency, editWeeklyDays);
 
         if (!nextName || !Number.isInteger(nextTarget) || nextTarget < 1) {
           return;
@@ -331,6 +405,7 @@
             name: nextName,
             target: nextTarget,
             unit: nextUnit,
+            frequency: nextFrequency,
             progress: Math.min(Number(current.progress) || 0, nextMax),
             updatedAt: new Date().toISOString()
           };
@@ -443,6 +518,7 @@
       const name = taskName.value.trim();
       const target = Number(taskTarget.value);
       const unit = taskUnit.value.trim() || "个";
+      const frequency = readFrequency(taskFrequency, taskWeeklyDays);
       const timestamp = Date.now();
 
       if (!name || !Number.isInteger(target) || target < 1) {
@@ -457,6 +533,7 @@
         unit,
         progress: 0,
         archived: false,
+        frequency,
         logs: [],
         createdAt: new Date(timestamp).toISOString(),
         updatedAt: new Date(timestamp).toISOString()
@@ -464,8 +541,15 @@
       await saveTasks(tasks);
       taskForm.reset();
       taskUnit.value = "";
+      taskFrequency.value = "daily";
+      taskWeeklyDays.value = "3";
+      syncWeeklyDaysField(taskFrequency, taskWeeklyDaysLabel);
       praiseText.textContent = `已添加「${name}」，现在可以开始打卡啦。`;
       await render();
+    });
+
+    taskFrequency.addEventListener("change", () => {
+      syncWeeklyDaysField(taskFrequency, taskWeeklyDaysLabel);
     });
 
     clearAllBtn.addEventListener("click", async () => {

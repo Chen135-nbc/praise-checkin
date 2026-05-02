@@ -5,11 +5,22 @@
       "name": "背单词（新）",
       "target": 10,
       "unit": "个",
-      "progress": 0,
+      "progress": 10,
       "archived": false,
-      "logs": [],
+      "frequency": {
+        "type": "daily",
+        "weeklyDays": 1
+      },
+      "logs": [
+        {
+          "date": "2026-05-02",
+          "amount": 10,
+          "timestamp": 1777691268698,
+          "createdAt": "2026-05-02T03:07:48.698Z"
+        }
+      ],
       "createdAt": "2026-05-02T02:22:38.664Z",
-      "updatedAt": "2026-05-02T02:22:38.664Z"
+      "updatedAt": "2026-05-02T03:17:01.028Z"
     }
   ]
 }

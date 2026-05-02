@@ -26,6 +26,7 @@ body {
 
 button,
 input,
+select,
 a {
   font: inherit;
 }
@@ -154,7 +155,8 @@ h3 {
   font-weight: 700;
 }
 
-.task-form input {
+.task-form input,
+.task-form select {
   width: 100%;
   min-height: 48px;
   padding: 0 14px;
@@ -165,7 +167,8 @@ h3 {
   outline: none;
 }
 
-.task-form input:focus {
+.task-form input:focus,
+.task-form select:focus {
   border-color: rgba(137, 138, 196, 0.78);
   box-shadow: 0 0 0 4px rgba(192, 201, 238, 0.28);
 }
@@ -312,7 +315,8 @@ h3 {
   font-weight: 700;
 }
 
-.edit-form input {
+.edit-form input,
+.edit-form select {
   width: 100%;
   min-height: 42px;
   padding: 0 12px;
@@ -321,6 +325,10 @@ h3 {
   border: 1px solid var(--line);
   border-radius: 8px;
   outline: none;
+}
+
+.weekly-days-field[hidden] {
+  display: none;
 }
 
 .edit-actions {
@@ -427,6 +435,11 @@ h3 {
 .progress-item-head span {
   color: var(--accent-dark);
   font-weight: 800;
+}
+
+.progress-item.is-period-done {
+  border-color: rgba(137, 138, 196, 0.45);
+  box-shadow: inset 4px 0 0 var(--accent-dark);
 }
 
 .meter {
