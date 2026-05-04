@@ -16,44 +16,6 @@
       <a class="icon-link" href="index.html">返回</a>
     </header>
 
-    <section class="stats-grid" aria-label="统计概览">
-      <article class="stat-card">
-        <span>进行中</span>
-        <strong id="activeTaskCount">0</strong>
-        <small>项</small>
-      </article>
-      <article class="stat-card">
-        <span>已归档</span>
-        <strong id="archivedTaskCount">0</strong>
-        <small>项</small>
-      </article>
-      <article class="stat-card">
-        <span>打卡次数</span>
-        <strong id="logCount">0</strong>
-        <small>次</small>
-      </article>
-      <article class="stat-card">
-        <span>今日打卡</span>
-        <strong id="todayLogCount">0</strong>
-        <small>次</small>
-      </article>
-      <article class="stat-card">
-        <span>本周打卡</span>
-        <strong id="weekLogCount">0</strong>
-        <small>次</small>
-      </article>
-      <article class="stat-card">
-        <span>本周期达标</span>
-        <strong id="periodDoneCount">0</strong>
-        <small>项</small>
-      </article>
-      <article class="stat-card">
-        <span>最近打卡</span>
-        <strong id="latestLogTime" class="stat-time">--</strong>
-        <small>时间</small>
-      </article>
-    </section>
-
     <section class="history-section">
       <div class="section-title">
         <div>
@@ -62,6 +24,32 @@
         </div>
       </div>
       <div id="progressList" class="progress-list"></div>
+    </section>
+
+    <section class="history-section heatmap-section" aria-label="打卡热力图">
+      <div class="section-title">
+        <div>
+          <h2>打卡热力图</h2>
+          <p id="heatmapMonth" class="muted">本月打卡量越多，颜色越深。</p>
+        </div>
+        <label class="heatmap-filter">
+          <span>查看任务</span>
+          <select id="heatmapTaskSelect">
+            <option value="all">全部任务</option>
+          </select>
+        </label>
+      </div>
+      <div id="heatmapSummary" class="heatmap-summary"></div>
+      <div id="heatmapGrid" class="heatmap-grid"></div>
+      <div class="heatmap-legend" aria-label="颜色深浅说明">
+        <span>少</span>
+        <i data-level="1"></i>
+        <i data-level="2"></i>
+        <i data-level="3"></i>
+        <i data-level="4"></i>
+        <i data-level="5"></i>
+        <span>多</span>
+      </div>
     </section>
 
     <section class="history-section">
@@ -75,14 +63,11 @@
 
   <script>
     const STORAGE_KEY = "praise-task-checkins";
-    const activeTaskCount = document.querySelector("#activeTaskCount");
-    const archivedTaskCount = document.querySelector("#archivedTaskCount");
-    const logCount = document.querySelector("#logCount");
-    const todayLogCount = document.querySelector("#todayLogCount");
-    const weekLogCount = document.querySelector("#weekLogCount");
-    const periodDoneCount = document.querySelector("#periodDoneCount");
-    const latestLogTime = document.querySelector("#latestLogTime");
     const progressList = document.querySelector("#progressList");
+    const heatmapMonth = document.querySelector("#heatmapMonth");
+    const heatmapTaskSelect = document.querySelector("#heatmapTaskSelect");
+    const heatmapSummary = document.querySelector("#heatmapSummary");
+    const heatmapGrid = document.querySelector("#heatmapGrid");
     const recordHint = document.querySelector("#recordHint");
     const historyList = document.querySelector("#historyList");
 
@@ -239,26 +224,94 @@
       }).format(new Date(value));
     }
 
+    function renderHeatmap(tasks) {
+      const selectedValue = heatmapTaskSelect.value || "all";
+      const hasSelectedTask = selectedValue === "all" || tasks.some((task) => task.id === selectedValue);
+      const selectedTaskId = hasSelectedTask ? selectedValue : "all";
+      const selectedTasks = selectedTaskId === "all" ? tasks : tasks.filter((task) => task.id === selectedTaskId);
+      const now = new Date();
+      const year = now.getFullYear();
+      const month = now.getMonth();
+      const daysInMonth = new Date(year, month + 1, 0).getDate();
+      const firstDay = new Date(year, month, 1).getDay();
+      const monthKey = `${year}-${String(month + 1).padStart(2, "0")}`;
+      const dayAmounts = new Map();
+
+      heatmapMonth.textContent = `${year}年${month + 1}月 · 单日打卡量越多，颜色越深。`;
+      heatmapTaskSelect.innerHTML = '<option value="all">全部任务</option>';
+      tasks.forEach((task) => {
+        const option = document.createElement("option");
+        option.value = task.id;
+        option.textContent = `${task.name}${task.archived ? "（已归档）" : ""}`;
+        heatmapTaskSelect.appendChild(option);
+      });
+      heatmapTaskSelect.value = selectedTaskId;
+
+      selectedTasks.forEach((task) => {
+        (task.logs || []).forEach((log) => {
+          const dateKey = getLogDate(log);
+          if (!dateKey.startsWith(monthKey)) {
+            return;
+          }
+          dayAmounts.set(dateKey, (dayAmounts.get(dateKey) || 0) + Number(log.amount || 0));
+        });
+      });
+
+      const amounts = [...dayAmounts.values()];
+      const maxAmount = Math.max(...amounts, 0);
+      const totalAmount = amounts.reduce((sum, amount) => sum + amount, 0);
+      const activeDays = amounts.filter((amount) => amount > 0).length;
+      const strongest = [...dayAmounts.entries()].sort((a, b) => b[1] - a[1])[0];
+      const selectedName = selectedTaskId === "all"
+        ? "全部任务"
+        : tasks.find((task) => task.id === selectedTaskId)?.name || "全部任务";
+
+      heatmapSummary.innerHTML = `
+        <span>${escapeHtml(selectedName)}</span>
+        <span>打卡天数 ${activeDays} 天</span>
+        <span>累计打卡量 ${totalAmount}</span>
+        <span>最高单日 ${strongest ? `${strongest[1]} · ${strongest[0]}` : "暂无"}</span>
+      `;
+
+      heatmapGrid.innerHTML = "";
+      ["日", "一", "二", "三", "四", "五", "六"].forEach((label) => {
+        const cell = document.createElement("span");
+        cell.className = "heatmap-weekday";
+        cell.textContent = label;
+        heatmapGrid.appendChild(cell);
+      });
+
+      for (let index = 0; index < firstDay; index += 1) {
+        const empty = document.createElement("span");
+        empty.className = "heatmap-day is-empty";
+        heatmapGrid.appendChild(empty);
+      }
+
+      for (let day = 1; day <= daysInMonth; day += 1) {
+        const dateKey = `${monthKey}-${String(day).padStart(2, "0")}`;
+        const amount = dayAmounts.get(dateKey) || 0;
+        const level = amount === 0 || maxAmount === 0 ? 0 : Math.max(1, Math.ceil((amount / maxAmount) * 5));
+        const cell = document.createElement("span");
+        cell.className = "heatmap-day";
+        cell.dataset.level = level;
+        cell.textContent = day;
+        cell.title = `${dateKey} · 打卡量 ${amount}`;
+        cell.classList.toggle("is-today", dateKey === getTodayKey());
+        heatmapGrid.appendChild(cell);
+      }
+    }
+
     async function render() {
       const tasks = await readTasks();
       const logs = tasks.flatMap((task) => (task.logs || []).map((log) => ({
         ...log,
+        taskId: task.id,
         taskName: task.name,
         unit: task.unit,
         archived: task.archived
       }))).sort((a, b) => getLogTimestamp(b) - getLogTimestamp(a));
-      const todayKey = getTodayKey();
-      const weekStart = getWeekStart();
-      const latestLog = logs[0];
-      const activeTasks = tasks.filter((task) => !task.archived);
 
-      activeTaskCount.textContent = activeTasks.length;
-      archivedTaskCount.textContent = tasks.filter((task) => task.archived).length;
-      logCount.textContent = logs.length;
-      todayLogCount.textContent = logs.filter((log) => getLogDate(log) === todayKey).length;
-      weekLogCount.textContent = logs.filter((log) => getLogTimestamp(log) >= weekStart).length;
-      periodDoneCount.textContent = activeTasks.filter((task) => getTaskPeriodStatus(task).done).length;
-      latestLogTime.textContent = latestLog ? formatTime(getLogTimestamp(latestLog)) : "--";
+      renderHeatmap(tasks);
       recordHint.textContent = `${logs.length} 条`;
 
       progressList.innerHTML = "";
@@ -307,6 +360,8 @@
         historyList.appendChild(item);
       });
     }
+
+    heatmapTaskSelect.addEventListener("change", render);
 
     render();
   </script>

@@ -5,7 +5,7 @@
       "name": "背单词（新）",
       "target": 10,
       "unit": "个",
-      "progress": 10,
+      "progress": 11,
       "archived": false,
       "frequency": {
         "type": "daily",
@@ -20,7 +20,7 @@
         }
       ],
       "createdAt": "2026-05-02T02:22:38.664Z",
-      "updatedAt": "2026-05-02T03:17:01.028Z"
+      "updatedAt": "2026-05-02T04:56:11.383Z"
     }
   ]
 }
