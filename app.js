@@ -86,9 +86,53 @@ const praiseLevels = {
   }
 };
 
+const totalProgressPraises = {
+  10: {
+    title: "完成 10%",
+    text: "开局已经稳稳踩下去了。10% 看起来不多，但它代表你真的开始积累了。"
+  },
+  20: {
+    title: "完成 20%",
+    text: "五分之一到手。你已经越过最容易放弃的起步阶段，继续走会越来越顺。"
+  },
+  30: {
+    title: "完成 30%",
+    text: "30% 很扎实了。目标正在从“计划”变成“成果”，这一步很漂亮。"
+  },
+  40: {
+    title: "完成 40%",
+    text: "快到一半了。你正在用一次次打卡把长期目标拆成能握住的小胜利。"
+  },
+  50: {
+    title: "完成 50%",
+    text: "一半完成，太值得夸了。你已经证明这件事不是遥远目标，而是正在发生。"
+  },
+  60: {
+    title: "完成 60%",
+    text: "过半之后还能继续推进，这份稳定很珍贵。你正在进入真正的收获区。"
+  },
+  70: {
+    title: "完成 70%",
+    text: "70% 了，已经能看见终点的轮廓。今天的你很能坚持，也很会推进。"
+  },
+  80: {
+    title: "完成 80%",
+    text: "80% 是非常亮眼的进度。你离完成只差最后一段，保持节奏就很棒。"
+  },
+  90: {
+    title: "完成 90%",
+    text: "90%，临门一脚了。你已经把大部分路都走完了，这份执行力很强。"
+  },
+  100: {
+    title: "总目标完成",
+    text: "100% 完成，正式收官。你把一个完整目标做到了最后，这份成就感请好好收下。"
+  }
+};
+
 const taskForm = document.querySelector("#taskForm");
 const taskName = document.querySelector("#taskName");
 const taskTarget = document.querySelector("#taskTarget");
+const taskTotalTarget = document.querySelector("#taskTotalTarget");
 const taskUnit = document.querySelector("#taskUnit");
 const taskFrequency = document.querySelector("#taskFrequency");
 const taskWeeklyDays = document.querySelector("#taskWeeklyDays");
@@ -161,10 +205,46 @@ function syncWeeklyDaysField(select, field) {
   field.hidden = select.value !== "custom";
 }
 
+function normalizeTotalTarget(value) {
+  const totalTarget = Number(value);
+  return Number.isInteger(totalTarget) && totalTarget > 0 ? totalTarget : null;
+}
+
+function getTotalProgress(task) {
+  return (task.logs || []).reduce((sum, log) => sum + Number(log.amount || 0), 0);
+}
+
+function getTotalProgressPercent(task) {
+  if (!task.totalTarget) {
+    return 0;
+  }
+  return Math.min(Math.round((getTotalProgress(task) / Number(task.totalTarget)) * 100), 100);
+}
+
+function getTotalMilestone(task) {
+  if (!task.totalTarget) {
+    return 0;
+  }
+  const percent = Math.floor((getTotalProgress(task) / Number(task.totalTarget)) * 100);
+  return Math.min(Math.floor(percent / 10) * 10, 100);
+}
+
+function getCompletionDateLabel(task) {
+  if (!task.completedAt) {
+    return "";
+  }
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit"
+  }).format(new Date(task.completedAt));
+}
+
 function normalizeTasks(tasks) {
   return tasks.map((task) => ({
     ...task,
     archived: Boolean(task.archived),
+    totalTarget: normalizeTotalTarget(task.totalTarget),
     frequency: normalizeFrequency(task.frequency),
     logs: (task.logs || []).map((log) => {
       const timestamp = getLogTimestamp(log) || Date.now();
@@ -228,7 +308,9 @@ function getMaxValue(task) {
 }
 
 function getPraiseLevel(task, amount) {
-  const percent = Math.round((Number(amount) / Number(task.target)) * 100);
+  const percent = task.totalTarget
+    ? Math.round((getTotalProgress(task) / Number(task.totalTarget)) * 100)
+    : Math.round((Number(amount) / Number(task.target)) * 100);
   if (percent < 50) {
     return 0;
   }
@@ -236,17 +318,42 @@ function getPraiseLevel(task, amount) {
 }
 
 function showPraise(task, amount) {
-  const percent = Math.round((Number(amount) / Number(task.target)) * 100);
+  const percent = task.totalTarget
+    ? Math.round((getTotalProgress(task) / Number(task.totalTarget)) * 100)
+    : Math.round((Number(amount) / Number(task.target)) * 100);
   const level = getPraiseLevel(task, amount);
   const praise = praiseLevels[level] || praiseLevels[1000];
   const displayPercent = level === 0 ? `${percent}%` : `${level}%`;
-  const message = `${task.name} 已打卡到 ${amount}${task.unit}，完成度 ${percent}%。${praise.text}`;
+  const message = task.totalTarget
+    ? `${task.name} 本次打卡 ${amount}${task.unit}，总进度 ${getTotalProgress(task)}/${task.totalTarget}${task.unit}，完成度 ${percent}%。${praise.text}`
+    : `${task.name} 已打卡到 ${amount}${task.unit}，完成度 ${percent}%。${praise.text}`;
 
   praiseText.textContent = message;
   praiseModalPercent.textContent = displayPercent;
   praiseModalTitle.textContent = praise.title;
   praiseModalText.textContent = message;
   praiseModal.hidden = false;
+}
+
+function showTotalProgressPraise(task, amount, milestone) {
+  const praise = totalProgressPraises[milestone] || totalProgressPraises[100];
+  const totalProgress = getTotalProgress(task);
+  const message = `${task.name} 本次打卡 ${amount}${task.unit}，总进度 ${totalProgress}/${task.totalTarget}${task.unit}。${praise.text}`;
+
+  praiseText.textContent = message;
+  praiseModalPercent.textContent = `${milestone}%`;
+  praiseModalTitle.textContent = praise.title;
+  praiseModalText.textContent = message;
+  praiseModal.hidden = false;
+}
+
+function getNextCrossedMilestone(beforeTask, afterTask) {
+  const beforeMilestone = getTotalMilestone(beforeTask);
+  const afterMilestone = getTotalMilestone(afterTask);
+  if (afterMilestone > beforeMilestone) {
+    return afterMilestone;
+  }
+  return 0;
 }
 
 async function updateTask(id, updater) {
@@ -287,20 +394,35 @@ function renderTask(task, isArchived) {
   const editForm = clone.querySelector(".edit-form");
   const editName = clone.querySelector(".edit-name");
   const editTarget = clone.querySelector(".edit-target");
+  const editTotalTarget = clone.querySelector(".edit-total-target");
   const editUnit = clone.querySelector(".edit-unit");
   const editFrequency = clone.querySelector(".edit-frequency");
   const editWeeklyDays = clone.querySelector(".edit-weekly-days");
   const editWeeklyDaysField = clone.querySelector(".edit-weekly-days-field");
   const cancelEditButton = clone.querySelector(".cancel-edit-button");
+  const totalProgressText = clone.querySelector(".total-progress-text");
+  const totalMeter = clone.querySelector(".total-meter");
+  const totalProgressNote = clone.querySelector(".total-progress-note");
 
   card.dataset.id = task.id;
   card.classList.toggle("is-archived", isArchived);
   title.textContent = task.name;
-  status.textContent = isArchived ? "已归档" : "进行中";
+  status.textContent = task.completedAt ? "已完成" : isArchived ? "已归档" : "进行中";
   unit.textContent = `${task.unit} / ${task.target}${task.unit}`;
   slider.max = max;
   slider.value = progress;
   updateSliderDisplay(task, slider, value, meta);
+  const totalProgress = getTotalProgress(task);
+  const totalPercent = getTotalProgressPercent(task);
+  totalProgressText.textContent = task.totalTarget
+    ? `${totalProgress}/${task.totalTarget}${task.unit}`
+    : "未设置总目标";
+  totalMeter.style.setProperty("--fill", `${totalPercent}%`);
+  totalProgressNote.textContent = task.totalTarget
+    ? task.completedAt
+      ? `总目标已完成，完成日期 ${getCompletionDateLabel(task)}`
+      : `距离总目标还差 ${Math.max(Number(task.totalTarget) - totalProgress, 0)}${task.unit}`
+    : "设置总目标后，达到 100% 会自动归档。";
 
   archiveButton.textContent = isArchived ? "恢复" : "归档";
   progressArea.hidden = isArchived;
@@ -309,6 +431,7 @@ function renderTask(task, isArchived) {
   editButton.addEventListener("click", () => {
     editName.value = task.name;
     editTarget.value = task.target;
+    editTotalTarget.value = task.totalTarget || "";
     editUnit.value = task.unit;
     editFrequency.value = normalizeFrequency(task.frequency).type;
     editWeeklyDays.value = normalizeFrequency(task.frequency).weeklyDays;
@@ -328,6 +451,7 @@ function renderTask(task, isArchived) {
     event.preventDefault();
     const nextName = editName.value.trim();
     const nextTarget = Number(editTarget.value);
+    const nextTotalTarget = normalizeTotalTarget(editTotalTarget.value);
     const nextUnit = editUnit.value.trim() || "个";
     const nextFrequency = readFrequency(editFrequency, editWeeklyDays);
 
@@ -337,14 +461,22 @@ function renderTask(task, isArchived) {
 
     await updateTask(task.id, (current) => {
       const nextMax = nextTarget * 5;
+      const isComplete = nextTotalTarget && getTotalProgress(current) >= nextTotalTarget;
+      const timestamp = new Date().toISOString();
       return {
         ...current,
         name: nextName,
         target: nextTarget,
+        totalTarget: nextTotalTarget,
         unit: nextUnit,
         frequency: nextFrequency,
         progress: Math.min(Number(current.progress) || 0, nextMax),
-        updatedAt: new Date().toISOString()
+        archived: isComplete ? true : current.archived,
+        archivedAt: isComplete ? current.archivedAt || timestamp : current.archivedAt,
+        completedAt: isComplete
+          ? current.completedAt || timestamp
+          : null,
+        updatedAt: timestamp
       };
     });
     praiseText.textContent = `已更新「${nextName}」。`;
@@ -365,21 +497,40 @@ function renderTask(task, isArchived) {
   checkButton.addEventListener("click", async () => {
     const amount = Number(slider.value);
     const timestamp = Date.now();
+    let completedTask = null;
+    let crossedMilestone = 0;
     await updateTask(task.id, (current) => {
+      const beforeTask = normalizeTasks([current])[0];
       const log = {
         date: getTodayKey(new Date(timestamp)),
         amount,
         timestamp,
         createdAt: new Date(timestamp).toISOString()
       };
-      return {
+      const nextLogs = [...(current.logs || []), log];
+      const nextTask = {
         ...current,
         progress: amount,
-        logs: [...(current.logs || []), log],
+        logs: nextLogs,
         updatedAt: new Date(timestamp).toISOString()
       };
+      const totalTarget = normalizeTotalTarget(nextTask.totalTarget);
+      const isComplete = totalTarget && getTotalProgress(nextTask) >= totalTarget;
+      completedTask = {
+        ...nextTask,
+        totalTarget,
+        archived: isComplete ? true : nextTask.archived,
+        archivedAt: isComplete ? new Date(timestamp).toISOString() : nextTask.archivedAt,
+        completedAt: isComplete ? new Date(timestamp).toISOString() : nextTask.completedAt
+      };
+      crossedMilestone = totalTarget ? getNextCrossedMilestone(beforeTask, completedTask) : 0;
+      return completedTask;
     });
-    showPraise(task, amount);
+    if (completedTask?.totalTarget && crossedMilestone) {
+      showTotalProgressPraise(completedTask, amount, crossedMilestone);
+    } else {
+      showPraise(completedTask || task, amount);
+    }
   });
 
   plusButton.addEventListener("click", async () => {
@@ -406,6 +557,7 @@ function renderTask(task, isArchived) {
       ...current,
       archived: !isArchived,
       archivedAt: isArchived ? null : new Date(timestamp).toISOString(),
+      completedAt: isArchived ? null : current.completedAt,
       updatedAt: new Date(timestamp).toISOString()
     }));
     praiseText.textContent = isArchived ? `已恢复「${task.name}」。` : `已归档「${task.name}」。`;
@@ -454,6 +606,7 @@ taskForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   const name = taskName.value.trim();
   const target = Number(taskTarget.value);
+  const totalTarget = normalizeTotalTarget(taskTotalTarget.value);
   const unit = taskUnit.value.trim() || "个";
   const frequency = readFrequency(taskFrequency, taskWeeklyDays);
   const timestamp = Date.now();
@@ -467,9 +620,11 @@ taskForm.addEventListener("submit", async (event) => {
     id: createId(),
     name,
     target,
+    totalTarget,
     unit,
     progress: 0,
     archived: false,
+    completedAt: null,
     frequency,
     logs: [],
     createdAt: new Date(timestamp).toISOString(),

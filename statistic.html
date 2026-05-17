@@ -58,6 +58,7 @@
         <span id="recordHint" class="muted"></span>
       </div>
       <ul id="historyList" class="history-list"></ul>
+      <nav id="historyPagination" class="pagination" aria-label="打卡记录分页"></nav>
     </section>
   </main>
 
@@ -70,6 +71,9 @@
     const heatmapGrid = document.querySelector("#heatmapGrid");
     const recordHint = document.querySelector("#recordHint");
     const historyList = document.querySelector("#historyList");
+    const historyPagination = document.querySelector("#historyPagination");
+    const RECORDS_PER_PAGE = 10;
+    let currentHistoryPage = 1;
 
     function getTodayKey(date = new Date()) {
       const year = date.getFullYear();
@@ -108,6 +112,33 @@
         return { type: "custom", weeklyDays };
       }
       return { type: "daily", weeklyDays: 1 };
+    }
+
+    function normalizeTotalTarget(value) {
+      const totalTarget = Number(value);
+      return Number.isInteger(totalTarget) && totalTarget > 0 ? totalTarget : null;
+    }
+
+    function getTotalProgress(task) {
+      return (task.logs || []).reduce((sum, log) => sum + Number(log.amount || 0), 0);
+    }
+
+    function getTotalProgressPercent(task) {
+      if (!task.totalTarget) {
+        return 0;
+      }
+      return Math.min(Math.round((getTotalProgress(task) / Number(task.totalTarget)) * 100), 100);
+    }
+
+    function getCompletionDateLabel(task) {
+      if (!task.completedAt) {
+        return "";
+      }
+      return new Intl.DateTimeFormat("zh-CN", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).format(new Date(task.completedAt));
     }
 
     function getFrequencyLabel(task) {
@@ -162,6 +193,7 @@
       return tasks.map((task) => ({
         ...task,
         archived: Boolean(task.archived),
+        totalTarget: normalizeTotalTarget(task.totalTarget),
         frequency: normalizeFrequency(task.frequency),
         logs: (task.logs || []).map((log) => {
           const timestamp = getLogTimestamp(log) || Date.now();
@@ -301,6 +333,63 @@
       }
     }
 
+    function renderHistory(logs) {
+      const totalPages = Math.max(Math.ceil(logs.length / RECORDS_PER_PAGE), 1);
+      currentHistoryPage = Math.min(Math.max(currentHistoryPage, 1), totalPages);
+      const start = (currentHistoryPage - 1) * RECORDS_PER_PAGE;
+      const pageLogs = logs.slice(start, start + RECORDS_PER_PAGE);
+
+      recordHint.textContent = logs.length > 0
+        ? `共 ${logs.length} 条 · 第 ${currentHistoryPage}/${totalPages} 页`
+        : "0 条";
+      historyList.innerHTML = "";
+      historyPagination.innerHTML = "";
+
+      if (logs.length === 0) {
+        historyList.innerHTML = '<li class="empty-state">暂无打卡记录。</li>';
+        return;
+      }
+
+      pageLogs.forEach((log) => {
+        const timestamp = getLogTimestamp(log);
+        const item = document.createElement("li");
+        item.className = "history-item";
+        item.innerHTML = `
+          <time datetime="${new Date(timestamp).toISOString()}">${formatFullTime(timestamp)}</time>
+          <p>${escapeHtml(log.taskName)} 打卡到 ${log.amount}${escapeHtml(log.unit)}</p>
+          <span>${log.archived ? "已归档任务" : "进行中任务"} · ${getLogDate(log)}</span>
+        `;
+        historyList.appendChild(item);
+      });
+
+      if (totalPages <= 1) {
+        return;
+      }
+
+      const previousButton = document.createElement("button");
+      previousButton.type = "button";
+      previousButton.textContent = "上一页";
+      previousButton.dataset.page = String(currentHistoryPage - 1);
+      previousButton.disabled = currentHistoryPage === 1;
+      historyPagination.appendChild(previousButton);
+
+      for (let page = 1; page <= totalPages; page += 1) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = String(page);
+        button.dataset.page = String(page);
+        button.classList.toggle("is-active", page === currentHistoryPage);
+        historyPagination.appendChild(button);
+      }
+
+      const nextButton = document.createElement("button");
+      nextButton.type = "button";
+      nextButton.textContent = "下一页";
+      nextButton.dataset.page = String(currentHistoryPage + 1);
+      nextButton.disabled = currentHistoryPage === totalPages;
+      historyPagination.appendChild(nextButton);
+    }
+
     async function render() {
       const tasks = await readTasks();
       const logs = tasks.flatMap((task) => (task.logs || []).map((log) => ({
@@ -312,7 +401,6 @@
       }))).sort((a, b) => getLogTimestamp(b) - getLogTimestamp(a));
 
       renderHeatmap(tasks);
-      recordHint.textContent = `${logs.length} 条`;
 
       progressList.innerHTML = "";
       if (tasks.length === 0) {
@@ -321,8 +409,11 @@
         tasks.forEach((task) => {
           const max = Number(task.target) * 5;
           const progress = Number(task.progress) || 0;
+          const totalProgress = getTotalProgress(task);
+          const totalTarget = normalizeTotalTarget(task.totalTarget);
+          const totalPercent = getTotalProgressPercent(task);
           const targetPercent = Math.min((progress / Number(task.target)) * 100, 500);
-          const rangePercent = Math.min((progress / max) * 100, 100);
+          const barPercent = totalTarget ? totalPercent : Math.min((progress / max) * 100, 100);
           const periodStatus = getTaskPeriodStatus(task);
           const item = document.createElement("article");
           item.className = "progress-item";
@@ -330,38 +421,32 @@
           item.innerHTML = `
             <div class="progress-item-head">
               <strong>${escapeHtml(task.name)}${task.archived ? "（已归档）" : ""}</strong>
-              <span>${progress}${escapeHtml(task.unit)} / ${task.target}${escapeHtml(task.unit)}</span>
+              <span>${totalTarget ? `${totalProgress}${escapeHtml(task.unit)} / ${totalTarget}${escapeHtml(task.unit)}` : `${progress}${escapeHtml(task.unit)} / ${task.target}${escapeHtml(task.unit)}`}</span>
             </div>
-            <div class="meter" style="--fill: ${rangePercent}%">
+            <div class="meter" style="--fill: ${barPercent}%">
               <span></span>
             </div>
             <p class="muted">${getFrequencyLabel(task)} · ${periodStatus.text}</p>
+            <p class="muted">${totalTarget ? `总进度 ${totalProgress}/${totalTarget}${escapeHtml(task.unit)} · ${totalPercent}%${task.completedAt ? ` · 完成日期 ${getCompletionDateLabel(task)}` : ""}` : "未设置总目标"}</p>
             <p class="muted">目标完成度 ${Math.round(targetPercent)}%，进度条范围 0-${max}${escapeHtml(task.unit)}</p>
           `;
           progressList.appendChild(item);
         });
       }
 
-      historyList.innerHTML = "";
-      if (logs.length === 0) {
-        historyList.innerHTML = '<li class="empty-state">暂无打卡记录。</li>';
-        return;
-      }
-
-      logs.forEach((log) => {
-        const timestamp = getLogTimestamp(log);
-        const item = document.createElement("li");
-        item.className = "history-item";
-        item.innerHTML = `
-          <time datetime="${new Date(timestamp).toISOString()}">${formatFullTime(timestamp)}</time>
-          <p>${escapeHtml(log.taskName)} 打卡到 ${log.amount}${escapeHtml(log.unit)}</p>
-          <span>${log.archived ? "已归档任务" : "进行中任务"} · ${getLogDate(log)}</span>
-        `;
-        historyList.appendChild(item);
-      });
+      renderHistory(logs);
     }
 
     heatmapTaskSelect.addEventListener("change", render);
+
+    historyPagination.addEventListener("click", (event) => {
+      const button = event.target.closest("button[data-page]");
+      if (!button || button.disabled) {
+        return;
+      }
+      currentHistoryPage = Number(button.dataset.page);
+      render();
+    });
 
     render();
   </script>

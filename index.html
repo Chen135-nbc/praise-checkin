@@ -59,8 +59,12 @@
           <input id="taskName" type="text" maxlength="30" placeholder="例如：Python 教学视频" required>
         </label>
         <label>
-          <span>目标数量</span>
+          <span>单次目标数量</span>
           <input id="taskTarget" type="number" min="1" max="999" placeholder="2" required>
+        </label>
+        <label>
+          <span>总目标数量</span>
+          <input id="taskTotalTarget" type="number" min="1" max="99999" placeholder="100">
         </label>
         <label>
           <span>单位</span>
@@ -125,8 +129,12 @@
           <input class="edit-name" type="text" maxlength="30" required>
         </label>
         <label>
-          <span>目标数量</span>
+          <span>单次目标数量</span>
           <input class="edit-target" type="number" min="1" max="999" required>
+        </label>
+        <label>
+          <span>总目标数量</span>
+          <input class="edit-total-target" type="number" min="1" max="99999">
         </label>
         <label>
           <span>单位</span>
@@ -151,6 +159,17 @@
       </form>
 
       <div class="task-progress-area">
+        <div class="total-progress-block">
+          <div class="progress-item-head">
+            <strong>总进度</strong>
+            <span class="total-progress-text">0/0</span>
+          </div>
+          <div class="meter total-meter" style="--fill: 0%">
+            <span></span>
+          </div>
+          <p class="muted total-progress-note"></p>
+        </div>
+
         <div class="progress-readout">
           <strong class="progress-value">0</strong>
           <span class="progress-unit"></span>
